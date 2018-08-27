@@ -1,28 +1,29 @@
-//May be error English syntax
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 #include <WiFiUdp.h>
 #include <WiFiClient.h>
-//Lib WiFiUdp.h : create Sender Obj and Receiver Obj
+
 WiFiUDP UDPSender;
 WiFiUDP UDPReceiver;
-//Lib ESP8266WebServer.h : open port 80 in ESP8266 for connection from client
+
 ESP8266WebServer server(80);
 
-//byte mEOJ[] = {0x00, 0x22, 0x01}; //Electic energy sensor 1
-//ESV---: Service Code
-const byte SetC = 0x61;
-const byte Get = 0x62;
-const byte Set_Res = 0x71;
-const byte Get_Res = 0x72;
+void sendMessage(IPAddress ip, int port, byte message[], IPAddress ipWiFi);
+
+// ESV value
+const byte SetI = 0x60; // request write value (no response required)
+const byte SetC = 0x61; // request write value (response required)
+const byte Get = 0x62; // request read value
+const byte SET_res = 0x71; // response write value
+const byte GET_res = 0x72; // response read value
 const byte INF = 0x73;
-//~ESV---
+const byte INF_req = 0x63;
 
 const byte GET_echo = 0xD6;
 
 
-//EPC---
+// EPC value
 //Device Object Super Class Properties
 const byte OperationStatus = 0x80; //0x30=ON 0x31=OFF
 const byte Location = 0x81; //location
@@ -34,27 +35,25 @@ const byte Capacity_sma = 0xE2; //Small-capacity sensor instantaneous electric e
 const byte Capacity_lar = 0xE3; //Large-capacity sensor instantaneous electric energy 2B 0.1kW
 const byte Cumulative_log = 0xE4; //Cumulative amounts of electric energy measurement log 192B 0,0001kWh
 const byte Effective_voltage = 0xE5; //Effective voltage value 2B V
-//~EPC---
-//Address Multicast for ECHONET Lite UDP: IP: 224.0.23.0, port: 3610---
+
 const IPAddress ipMulti = {224, 0, 23, 0};
 const int portMulti = 3610;
-//~ ---
+
 //Access point
 const char* ssid = "AP_ESP8266";
-const char* passphrase = "12345";
-//~ ---
-//---
+const char* passphrase = "12345678";
+
 String st;
 String content;
 int statusCode;
-//~---
-//---
+
 union {
   float floatValue;
   unsigned char bytes[4];
 } thing;
-//~---
-class propetie_content{
+
+
+class property_content{
   public:
   byte EPC, PDC;
   byte EDT[20];
@@ -62,7 +61,7 @@ class propetie_content{
 class packet{
   public:
     byte TID[2], SEOJ[3], DEOJ[3], ESV, OPC;
-    propetie_content E_P_E[5];
+    property_content properties[5];
     // byte[] -> packet
     void readPacket(byte packet[], int n){
       byte SEOJ_copy[] = {packet[4], packet[5], packet[6]};
@@ -77,10 +76,10 @@ class packet{
       OPC = packet[11];
       int p=12;
       for(int i=0;i<OPC;i++){
-        E_P_E[i].EPC=packet[p++];
-        E_P_E[i].PDC=packet[p++];
-        for(int j=0;j<E_P_E[i].PDC;j++){
-          E_P_E[i].EDT[j]=packet[p++];
+        properties[i].EPC=packet[p++];
+        properties[i].PDC=packet[p++];
+        for(int j=0;j<properties[i].PDC;j++){
+          properties[i].EDT[j]=packet[p++];
         }
       }
     }
@@ -89,7 +88,7 @@ class packet{
       byte head_packet[12]={0x10, 0x81, TID[0], TID[1], SEOJ[0], SEOJ[1], SEOJ[2], DEOJ[0], DEOJ[1], DEOJ[2], ESV, OPC};
       int n=0;
       for(int i=0;i<OPC;i++){
-        n+=(E_P_E[i].PDC+2);
+        n+=(properties[i].PDC+2);
       }
       n+=12;
       byte packet[n];
@@ -100,61 +99,84 @@ class packet{
       int j=0;
       while(1){
         if(j>=OPC) break;
-        packet[i++]=E_P_E[j].EPC;
-        packet[i++]=E_P_E[j].PDC;
-        for(int t=0;t<E_P_E[j].PDC;t++){
-          packet[i++]=E_P_E[j].EDT[t];
+        packet[i++]=properties[j].EPC;
+        packet[i++]=properties[j].PDC;
+        for(int t=0;t<properties[j].PDC;t++){
+          packet[i++]=properties[j].EDT[t];
         }
         j++;
       }
       return packet;
     }
     void printPacket(){
-      
-      Serial.print(TID[0]+" ");
-      Serial.print(TID[1]+" ");
-      Serial.print(SEOJ[0]+" ");
-      Serial.print(SEOJ[1]+" ");
-      Serial.print(SEOJ[2]+" ");
-      Serial.print(DEOJ[0]+" ");
-      Serial.print(DEOJ[1]+" ");
-      Serial.print(DEOJ[2]+" ");
-      Serial.print(ESV+" ");
-      Serial.print(OPC+" ");
+      Serial.print("TID: ");
+      Serial.print(TID[0]);
+      Serial.print(" ");
+      Serial.print(TID[1]);
+      Serial.print(" ");
+      Serial.print("SEOJ: ");
+      Serial.print(SEOJ[0]);
+      Serial.print(" ");
+      Serial.print(SEOJ[1]);
+      Serial.print(" ");
+      Serial.print(SEOJ[2]);
+      Serial.print(" ");
+      Serial.print("DEOJ: ");
+      Serial.print(DEOJ[0]);
+      Serial.print(" ");
+      Serial.print(DEOJ[1]);
+      Serial.print(" ");
+      Serial.print(DEOJ[2]);
+      Serial.print(" ");
+      Serial.print("ESV: ");
+      Serial.print(ESV);
+      Serial.print(" ");
+      Serial.print("OPC: ");
+      Serial.print(OPC);
+      Serial.print(" ");
       int j=0;
       while(1){
         if(j>=OPC) break;
-        Serial.print(E_P_E[j].EPC+" ");
-        Serial.print(E_P_E[j].PDC+" ");
-        for(int t=0;t<E_P_E[j].PDC;t++){
-          Serial.print(E_P_E[j].EDT[t]+" ");
+        Serial.print("EPC: ");
+        Serial.print(properties[j].EPC);
+        Serial.print(" ");
+        Serial.print("PDC: ");
+        Serial.print(properties[j].PDC);
+        Serial.print(" ");
+        for(int t=0;t<properties[j].PDC;t++){
+          Serial.print("EDT: ");
+          Serial.print(properties[j].EDT[t]);
+          Serial.print(" ");
         }
         j++;
       }
       Serial.println();
     }
 };
+
+
+
 void setup() {
   Serial.begin(115200);
   EEPROM.begin(512);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(4, OUTPUT);
-  //digitalWrite(4,HIGH);
   pinMode(A0, INPUT);
   delay(10);
-  Serial.println();
-  Serial.println();
+  Serial.println("**************************************");
   Serial.println("Startup");
   
-  // read eeprom for ssid and pass
+  // read eeprom for ssid
   Serial.println("Reading EEPROM ssid");
-  String esid;
+  String esid="";
   for (int i = 0; i < 32; ++i)
   {
     esid += char(EEPROM.read(i));//
   }
   Serial.print("SSID: ");
   Serial.println(esid);
+
+  // read eeprom for pass
   Serial.println("Reading EEPROM pass");
   String epass = "";
   for (int i = 32; i < 96; ++i)
@@ -163,25 +185,46 @@ void setup() {
   }
   Serial.print("PASS: ");
   Serial.println(epass);
-  //WiFi.setAutoConnect(false);
+
+  // Turn off auto connect with wifi before
+  WiFi.setAutoConnect(false);
+
+  // Connect wifi
   if ( esid.length() > 1 ) {
     WiFi.begin(esid.c_str(), epass.c_str());
     if (testWifi()) {
       launchWeb(0);
+
       UDPReceiver.beginMulticast(WiFi.localIP(),  ipMulti, portMulti);
-      byte echoMyNode[] = {0x10, 0x81, 0x00, 0x00, 0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01, 0x73, 0x01, 0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)};
+
       Serial.println("ECHO ELECTRIC ENERGY SENSOR NODE");
+      byte echoMyNode[] = {0x10, 0x81, 0x00, 0x00, 0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01, 0x73, 0x01, 0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)};
       UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
       for (int i = 0; i < sizeof(echoMyNode); i++) {
-        UDPSender.write(echoMyNode[i]);
+       UDPSender.write(echoMyNode[i]);
       }
       UDPSender.endPacket();
+
       WiFi.softAPdisconnect(true);
-      return;
+      // check Status
+      byte deviceStatus = EEPROM.read(100);
+      if (deviceStatus == 0x30) {
+        digitalWrite(LED_BUILTIN, HIGH);
+        digitalWrite(4, HIGH);
+        Serial.println("Device on");
+      } else if (deviceStatus == 0x31) {
+        digitalWrite(LED_BUILTIN, LOW);
+        digitalWrite(4, LOW);
+        Serial.println("Device off");
+      } else {
+        Serial.println("Can't get deviceStatus. Set it!");
+      }
     }
+  } else {
+    setupAP();
   }
-  setupAP();
 }
+
 bool testWifi(void) {
   int c = 0;
   Serial.println("Waiting for Wifi to connect");
@@ -190,22 +233,22 @@ bool testWifi(void) {
       return true;
     }
     delay(500);
-    Serial.print(WiFi.status());
+    Serial.print('*');
     c++;
   }
-  Serial.println("");
+  Serial.println();
   Serial.println("Connect timed out, opening AP");
   return false;
 }
 
 void launchWeb(int webtype) {
-  Serial.println("");
-  Serial.println("WiFi connected");
+  Serial.println();
   Serial.print("Local IP: ");
   Serial.println(WiFi.localIP());
   Serial.print("SoftAP IP: ");
   Serial.println(WiFi.softAPIP());
   createWebServer(webtype);
+
   // Start the server
   server.begin();
   Serial.println("Server started");
@@ -215,10 +258,11 @@ void setupAP(void) {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
+
   int n = WiFi.scanNetworks();
-  Serial.println("scan done");
+  Serial.println("Scan done");
   if (n == 0)
-    Serial.println("no networks found");
+    Serial.println("No networks found");
   else
   {
     Serial.print(n);
@@ -251,8 +295,13 @@ void setupAP(void) {
   }
   st += "</ol>";
   delay(100);
-  WiFi.softAP(ssid);//, passphrase, 6);
-  Serial.println("softap");
+
+  WiFi.softAP(ssid, passphrase, 6);
+  Serial.println("Soft AP");
+  Serial.print("SSID: ");
+  Serial.println(ssid);
+  Serial.print("PASS: ");
+  Serial.println(passphrase);
   launchWeb(1);
   Serial.println("over");
 }
@@ -421,270 +470,191 @@ void createWebServer(int webtype)
     });
   }
 }
+
+String scanWifi() {
+  String s = "<ol>";
+  int n = WiFi.scanNetworks();
+  if (n == 0) {
+    s += "No networks found";
+  } else {
+    for (int i = 0; i < n; ++i) {
+      // Print SSID and RSSI for each network found
+      s += "<li>";
+      s += WiFi.SSID(i);
+      s += " (";
+      s += WiFi.RSSI(i);
+      s += ")";
+      s += (WiFi.encryptionType(i) == ENC_TYPE_NONE) ? " " : "*";
+      s += "</li>";
+    }
+  }
+  s += "</ol>";
+  delay(100);
+  return s;
+}
+
 int count = 0;
 void loop() {
   server.handleClient();
-  // follow device status to on/off
+/*
   byte deviceStatus = EEPROM.read(100);
+  Serial.println(deviceStatus);
   if (deviceStatus == 0x30) {
-    digitalWrite(LED_BUILTIN, HIGH);
-    digitalWrite(4, HIGH);
-  } else if (deviceStatus == 0x31) {
     digitalWrite(LED_BUILTIN, LOW);
     digitalWrite(4, LOW);
+  } else if (deviceStatus == 0x31) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(4, HIGH);
   } else {
     Serial.println("Can't get deviceStatus. Set it!");
   }
+  */
   int noBytes = UDPReceiver.parsePacket();
   if (noBytes) {
+    Serial.println("Recevied a packet........");
     byte request[noBytes];
     for (int i = 0; i < noBytes; i++) {
       request[i] = UDPReceiver.read();
     }
-    Serial.print("Recevied a packet........");
-    packet a;
-    a.readPacket(request,noBytes);
-    a.printPacket();
-    byte req_EOJ[] = {request[4], request[5], request[6]};
-    byte trans_ID[] = {request[2], request[3]};
-    byte ESV = request[10];
-    byte OPC = request[11];
-    byte EPC = request[12];
-    IPAddress requestIP = UDPReceiver.remoteIP();
-    int requestPort = UDPReceiver.remotePort();
-
-      for(int i=0;i<OPC;i++){
-        int pPDC=pEPC+1;//position of PDC
-        int pEDT=pPDC+1;
-        switch (request[pEPC]) {
-          //device status
-          case OperationStatus: {
-  
-              //byte response[] = {0x10, 0x81, trans_ID[0], trans_ID[1], EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2], Get_Res, 0x01, 0x80, 0x01, EEPROM.read(100)};
-              //byte response[] = {0x10, 0x81, trans_ID[0], trans_ID[1], EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2], Get_Res, 0x02, 0x80, 0x01, EEPROM.read(100), 0xE1, 0x04, bytes[0], bytes[1], bytes[2], bytes[3]};
-              //UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
-              response[pEPC]=request[pEPC];
-              response[pPDC]=1;
-              for(int i=0;i<response[pPDC];i++){
-                response[pEDT+i]=EEPROM.read(100+i);
-              }
-              
-//              UDPSender.beginPacket(requestIP, requestPort);
-//              for (int i = 0; i < sizeof(response); i++) {
-//                UDPSender.write(response[i]);
-//              }
-//              UDPSender.endPacket();
-//              Serial.println("Sended Status packet");
-              break;
-            }
-//          //info my node
-//          case 0xD6: {
-//              byte response[] = {0x10, 0x81, trans_ID[0], trans_ID[1], 0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01, INF, 0x01, 0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)};
-//              //UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
-//              UDPSender.beginPacket(requestIP, requestPort);
-//              for (int i = 0; i < sizeof(response); i++) {
-//                UDPSender.write(response[i]);
-//              }
-//              UDPSender.endPacket();
-//              Serial.println("Sended info packet");
-//              break;
-//            }
-          
-          //medium capacity
-          case 0xE1: {
-              float capacity = (float) ((getMaxValue() - 500) * (5.0 / 1024) * 1000 / 118) / sqrt(2) * 220;
-              thing.floatValue = capacity;
-              byte bytes[4] = {0, 0, 0, 0};
-              for (int i = 0; i < 4; i++) {
-                bytes[i] = thing.bytes[3 - i];
-              }
-//              byte response[] = {0x10, 0x81, trans_ID[0], trans_ID[1], EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2], Get_Res, 0x01, 0xE1, 0x04, bytes[0], bytes[1], bytes[2], bytes[3]};
-              //UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
-              response[pEPC]=request[pEPC];
-              response[pPDC]=4;
-              for (int i = 0; i < 4; i++) {
-                response[pEDT+i] = bytes[i];
-              }
-//              for(int i=0;i<response[pPDC];i++){
-//                response[pPDT+i]=EEPROM.read(100+i);
-//              }
-//              UDPSender.beginPacket(requestIP, requestPort);
-//              for (int i = 0; i < sizeof(response); i++) {
-//                UDPSender.write(response[i]);
-//              }
-//              UDPSender.endPacket();
-//              Serial.print("Sended capacity medium ");
-//              Serial.println(capacity);
-              break;
-            }
-          //power limit 2 bytes
-          case 0x99: {
-//              byte response[] = {0x10, 0x81, trans_ID[0], trans_ID[1], EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2], Get_Res, 0x01, 0x99, 0x02, EEPROM.read(101), EEPROM.read(102)};
-              //UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
-              response[pEPC]=request[pEPC];
-              response[pPDC]=2;
-              for (int i = 0; i < 2; i++) {
-                response[pEDT+i] = EEPROM.read(101+i);
-              }
-//              UDPSender.beginPacket(requestIP, requestPort);
-//              for (int i = 0; i < sizeof(response); i++) {
-//                UDPSender.write(response[i]);
-//              }
-//              UDPSender.endPacket();
-//              Serial.println("Sended power limit");
-              break;
-            }
-          
-          
-          default : {
-              Serial.print("EPC Code not found");
-              Serial.println(EPC);
-            }
-        }
-        
-        pEPC=pEPC+2+response[pPDC];
-      }
-      UDPSender.beginPacket(requestIP, requestPort);
-      for (int i = 0; i < sizeof(response); i++) {
-        UDPSender.write(response[i]);
-      }
-      UDPSender.endPacket();
-      // write response
-      
-    }
-
-
-    else if (ESV == SetC) {
-      //do do dai goi tin
-      int pEPC=12;
-      int l=11; // do dai goi tin gui di
-      
-      // dem do dai goi tin can gui 
-      for(int i=0;i<OPC;i++){
-        int pPDC=pEPC+1;//position of PDC
-        switch (request[pEPC]) {
-          //Device Object Super Class Properties
-          //Operation status
-          case 0x80: {
-              l+=2+1;
-              OPC++;
-              break;
-          }
-          //power limit 2 bytes
-          case 0x99: {
-              l+=2+2;
-              OPC++;
-              break;
-          }
-          //~Device Object Super Class Properties
-          //General Light
-          //~General Light
-          default : {
-              Serial.print("EPC Code not found");
-              Serial.println(EPC);
-          }
-        }
-        
-        pEPC=pEPC+2+request[pPDC];
-      }
-      
-
-      ////////////////////////
-      pEPC=12;
-      byte response[l];
-      byte head_response[12]={0x10, 0x81, trans_ID[0], trans_ID[1], EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2], Set_Res,OPC};
-      for(int i=0;i<12;i++){
-        response[i]=head_response[i];
-      }
-      for(int i=0;i<OPC;i++){
-        int pPDC=pEPC+1;
-        int pEDT=pOPC+1;
-        switch(request[pEPC]){
-          case 0x80:{
-            EEPROM.write(100, request[14]);
-            delay(5);
-            EEPROM.commit();
-            if(EEPROM.read(100)==0x30){
-              Serial.print(EEPROM.read(100));
-              digitalWrite(4,HIGH);
-            }else if(EEPROM.read(100)==0x31){
-              digitalWrite(4,LOW);
-              Serial.print(EEPROM.read(100));
-            }
-            
-            Serial.println("Sended SET status response packet! OK!");
-            response[pEPC]=request[pEPC]
-          }
-        }
-
-
-        pEPC=pEPC+2+request[pPDC];
-      }
-      if (EPC == OperationStatus) {
-        //byte response[] = {0x10, 0x81, trans_ID[0], trans_ID[1], EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2], Set_Res, 0x01, OperationStatus, 0x01};
-        //UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());       
-        EEPROM.write(100, request[14]);
-        delay(5);
-        EEPROM.commit();
-        if(EEPROM.read(100)==0x30){
-          Serial.print(EEPROM.read(100));
-          digitalWrite(4,HIGH);
-        }else if(EEPROM.read(100)==0x31){
-          digitalWrite(4,LOW);
-          Serial.print(EEPROM.read(100));
-        }
-        
-        Serial.println("Sended SET status response packet! OK!");
-        response[]
-//        UDPSender.beginPacket(requestIP, requestPort);
-//        for (int i = 0; i < sizeof(response); i++) {
-//          UDPSender.write(response[i]);
+    // read a packet
+//    byte trans_ID[] = {request[2], request[3]};
+//    byte req_EOJ[] = {request[4], request[5], request[6]};
+//    byte ESV = request[10];
+//    byte EPC = request[12];
+      packet req;
+      req.readPacket(request, noBytes);
+      req.printPacket();
+      byte ESV = req.ESV;
+      Serial.print("OPC: ");
+      Serial.println(req.OPC);
+    IPAddress reqIP = UDPReceiver.remoteIP();
+    int reqPort = UDPReceiver.remotePort();
+    
+    // send a packet
+//    if (ESV == Get) {
+//      for(int i=0;i<req.OPC;i++){
+//        byte EPC=req.properties[i].EPC;
+//        
+//        if (EPC == OperationStatus) {
+//
+//          Serial.println("Sended Status packet!");
+//        } else if(EPC == PowerLimit) {
+//          
+//
+//          Serial.println("Sended power limit");
+//        } else if(EPC == Location) {
+//              Serial.println("Get location request, not yet!");
+//        } else if(EPC == GET_echo) {
+//          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+//          sendMessage(reqIP, reqPort, resMessage);
+//          Serial.println("Sended info packet");
+//        } else if(EPC == 0xE0) {
+//          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+//           EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
+//            GET_res, 0x01,
+//             EPC, 0x04, 0x00, 0x00, 0x00, 0x00}; //packet ECHONET Lite
+//          sendMessage(reqIP, reqPort, resMessage);
+//          Serial.println("Sended integaral medium");
+//        } else if(EPC == 0xE1) {
+//          float capacity = (float) ((getMaxValue() - 500) * (5.0 / 1024) * 1000 / 118) / sqrt(2) * 220;
+//          thing.floatValue = capacity;
+//          byte bytes[4] = {0, 0, 0, 0};
+//          for (int i = 0; i < 4; i++) {
+//            bytes[i] = thing.bytes[3 - i];
+//          }
+//          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+//           EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
+//            GET_res, 0x01,
+//             EPC, 0x04, bytes[0], bytes[1], bytes[2], bytes[3]}; //packet ECHONET Lite
+//          sendMessage(reqIP, reqPort, resMessage);
+//          Serial.print("Sended capacity medium ");
+//          Serial.println(capacity);
+//        } else {
+//          Serial.print("EPC Code not found");
+//          Serial.println(EPC);
 //        }
-//        UDPSender.endPacket();
-        
-      } else if (EPC == PowerLimit) {
-        //set power limit - 2 bytes
-        byte response[] = {0x10, 0x81, trans_ID[0], trans_ID[1], EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2], Set_Res, 0x01, OperationStatus, 0x01};
-        //UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
-        UDPSender.beginPacket(requestIP, requestPort);
-        for (int i = 0; i < sizeof(response); i++) {
-          UDPSender.write(response[i]);
-        }
-        UDPSender.endPacket();
-        EEPROM.write(101, request[14]);
-        EEPROM.write(102, request[15]);
-        EEPROM.commit();
-        //        Serial.print(EEPROM.read(101));
-        //        Serial.print("-");
-        //        Serial.print(EEPROM.read(102));
-        //        Serial.print(" to int ");
-        //        int value = ((EEPROM.read(102) & 0xff) << 8) | EEPROM.read(101);
-        //        Serial.println(value);
-        //        byte low  = (value & 0xff);
-        //        byte high = (value >> 8) & 0xff;
-        //        Serial.print(value);
-        //        Serial.print(" to bytes : ");
-        //        Serial.print(low, HEX);
-        //        Serial.print("-");
-        //        Serial.println(high, HEX);
-        Serial.println("Sended SET power limit response packet! OK!");
-      } else {
-        Serial.println("Another SET request!");
-      }
-    } else if (ESV == INF) {
-      Serial.println("Another node found");
-    } else {
-      Serial.print("ESV Code Not Found :");
-      Serial.println(ESV);
-    }
+//      }
+//      
+//    } else if (ESV == SetC) {
+//      if (EPC == OperationStatus) {
+//        if(EEPROM.read(100) != request[14]) {
+//          EEPROM.write(100, request[14]);
+//          EEPROM.commit();
+//          delay(10);
+//          setStatusDevice();
+//        }
+//        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+//         EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
+//          SET_res, 0x01, EPC, 0x01, EEPROM.read(100)}; //packet ECHONET Lite
+//        sendMessage(reqIP, reqPort, resMessage);
+//        Serial.println("Sended SET status response packet! OK!");
+//      } else if (EPC == Location) {
+//        //set location
+//      } else if (EPC == PowerLimit) {
+//        //set power limit - 2 bytes
+//        if(EEPROM.read(101) != request[14]) {
+//          EEPROM.write(101, request[14]);
+//        }
+//        if(EEPROM.read(102) != request[15]) {
+//          EEPROM.write(102, request[15]);
+//        }
+//        EEPROM.commit();
+//        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+//         EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
+//          SET_res, 0x01,
+//           EPC, 0x02, EEPROM.read(101), EEPROM.read(102)}; //packet ECHONET Lite
+//        sendMessage(reqIP, reqPort, resMessage);
+//        Serial.println("Sended SET power limit response packet! OK!");
+//      } else {
+//        Serial.print("EPC code not found!  ");
+//        Serial.print("ESV: ");
+//        Serial.print(ESV);
+//        Serial.print(" EPC: ");
+//        Serial.println(EPC);
+//      }
+//    } else if(ESV == SetI) {
+//      //code
+//    } else if (ESV == INF_req) {
+//      if(EPC == GET_echo) {
+//        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+//         0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,
+//          INF, 0x01,
+//           0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+//        sendMessage(reqIP, reqPort, resMessage);
+//        Serial.println("Sended info packet");
+//      } else {
+//        Serial.print("EPC code not found!  ");
+//        Serial.print("ESV: ");
+//        Serial.print(ESV);
+//        Serial.print(" EPC: ");
+//        Serial.println(EPC);
+//      }
+//    } else if (ESV == INF) {
+//      if(EPC == GET_echo) {
+//        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+//         0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,
+//          INF, 0x01,
+//           0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+//        sendMessage(reqIP, reqPort, resMessage);
+//        Serial.println("Sended info packet");
+//      } else {
+//        Serial.print("EPC code not found!  ");
+//        Serial.print("ESV: ");
+//        Serial.print(ESV);
+//        Serial.print(" EPC: ");
+//        Serial.println(EPC);
+//      }
+//    } else {
+//      Serial.print("ESV Code Not Found :");
+//      Serial.println(ESV);
+//    }
   } else {
     delay(1000);
     count++;
-    if (count > 300) {
-      byte echoMyNode[] = {0x10, 0x81, 0x00, 0x00, 0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01, 0x73, 0x01, 0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)};
+    if (count > 20) {
+      byte echoMyNode[] = {0x10, 0x81, 0x00, 0x00,0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,0x73, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)};
       Serial.println("ECHO ELECTRIC ENERGY SENSOR NODE");
       UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
-      //UDPSender.beginPacket(ipMulti, portMulti);
       for (int i = 0; i < sizeof(echoMyNode); i++) {
         UDPSender.write(echoMyNode[i]);
       }
@@ -694,21 +664,41 @@ void loop() {
   }
 }
 
-int getMaxValue()
-{
+int getMaxValue() {
   int sensorValue;    //value read from the sensor
   int sensorMax = 0;
   uint32_t start_time = millis();
-  while ((millis() - start_time) < 1000) //sample for 1000ms
-  {
+  while ((millis() - start_time) < 1000) {  //sample for 1000ms
     sensorValue = analogRead(A0);
     //delay(100);
-    if (sensorValue > sensorMax)
-    {
+    if (sensorValue > sensorMax) {
       /*record the maximum sensor value*/
 
       sensorMax = sensorValue;
     }
   }
   return sensorMax - 3;
+}
+
+void sendMessage(IPAddress ip, int port, byte message[]) {
+  UDPSender.beginPacket(ip, port);
+  for (int i = 0; i < sizeof(message); i++) {
+    UDPSender.write(message[i]);
+  }
+  UDPSender.endPacket();
+}
+
+void setStatusDevice() {
+  byte deviceStatus = EEPROM.read(100);
+  if (deviceStatus == 0x30) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(4, HIGH);
+    Serial.println("Device on");
+  } else if (deviceStatus == 0x31) {
+    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(4, LOW);
+    Serial.println("Device off");
+  } else {
+    Serial.println("Can't get deviceStatus. Set it!");
+  }
 }
