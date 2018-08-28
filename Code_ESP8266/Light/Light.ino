@@ -521,133 +521,130 @@ void loop() {
 //    byte req_EOJ[] = {request[4], request[5], request[6]};
 //    byte ESV = request[10];
 //    byte EPC = request[12];
-      packet req;
-      req.readPacket(request, noBytes);
-      req.printPacket();
-      byte ESV = req.ESV;
-      Serial.print("OPC: ");
-      Serial.println(req.OPC);
+    packet req;
+    req.readPacket(request, noBytes);
+    req.printPacket();
+    byte ESV = req.ESV;
+    Serial.print("OPC: ");
+    Serial.println(req.OPC);
     IPAddress reqIP = UDPReceiver.remoteIP();
     int reqPort = UDPReceiver.remotePort();
     
-    // send a packet
-//    if (ESV == Get) {
-//      for(int i=0;i<req.OPC;i++){
-//        byte EPC=req.properties[i].EPC;
-//        
-//        if (EPC == OperationStatus) {
-//
-//          Serial.println("Sended Status packet!");
-//        } else if(EPC == PowerLimit) {
-//          
-//
-//          Serial.println("Sended power limit");
-//        } else if(EPC == Location) {
-//              Serial.println("Get location request, not yet!");
-//        } else if(EPC == GET_echo) {
-//          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
-//          sendMessage(reqIP, reqPort, resMessage);
-//          Serial.println("Sended info packet");
-//        } else if(EPC == 0xE0) {
-//          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-//           EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
-//            GET_res, 0x01,
-//             EPC, 0x04, 0x00, 0x00, 0x00, 0x00}; //packet ECHONET Lite
-//          sendMessage(reqIP, reqPort, resMessage);
-//          Serial.println("Sended integaral medium");
-//        } else if(EPC == 0xE1) {
-//          float capacity = (float) ((getMaxValue() - 500) * (5.0 / 1024) * 1000 / 118) / sqrt(2) * 220;
-//          thing.floatValue = capacity;
-//          byte bytes[4] = {0, 0, 0, 0};
-//          for (int i = 0; i < 4; i++) {
-//            bytes[i] = thing.bytes[3 - i];
-//          }
-//          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-//           EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
-//            GET_res, 0x01,
-//             EPC, 0x04, bytes[0], bytes[1], bytes[2], bytes[3]}; //packet ECHONET Lite
-//          sendMessage(reqIP, reqPort, resMessage);
-//          Serial.print("Sended capacity medium ");
-//          Serial.println(capacity);
-//        } else {
-//          Serial.print("EPC Code not found");
-//          Serial.println(EPC);
-//        }
-//      }
-//      
-//    } else if (ESV == SetC) {
-//      if (EPC == OperationStatus) {
-//        if(EEPROM.read(100) != request[14]) {
-//          EEPROM.write(100, request[14]);
-//          EEPROM.commit();
-//          delay(10);
-//          setStatusDevice();
-//        }
-//        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-//         EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
-//          SET_res, 0x01, EPC, 0x01, EEPROM.read(100)}; //packet ECHONET Lite
-//        sendMessage(reqIP, reqPort, resMessage);
-//        Serial.println("Sended SET status response packet! OK!");
-//      } else if (EPC == Location) {
-//        //set location
-//      } else if (EPC == PowerLimit) {
-//        //set power limit - 2 bytes
-//        if(EEPROM.read(101) != request[14]) {
-//          EEPROM.write(101, request[14]);
-//        }
-//        if(EEPROM.read(102) != request[15]) {
-//          EEPROM.write(102, request[15]);
-//        }
-//        EEPROM.commit();
-//        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-//         EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
-//          SET_res, 0x01,
-//           EPC, 0x02, EEPROM.read(101), EEPROM.read(102)}; //packet ECHONET Lite
-//        sendMessage(reqIP, reqPort, resMessage);
-//        Serial.println("Sended SET power limit response packet! OK!");
-//      } else {
-//        Serial.print("EPC code not found!  ");
-//        Serial.print("ESV: ");
-//        Serial.print(ESV);
-//        Serial.print(" EPC: ");
-//        Serial.println(EPC);
-//      }
-//    } else if(ESV == SetI) {
-//      //code
-//    } else if (ESV == INF_req) {
-//      if(EPC == GET_echo) {
-//        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-//         0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,
-//          INF, 0x01,
-//           0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
-//        sendMessage(reqIP, reqPort, resMessage);
-//        Serial.println("Sended info packet");
-//      } else {
-//        Serial.print("EPC code not found!  ");
-//        Serial.print("ESV: ");
-//        Serial.print(ESV);
-//        Serial.print(" EPC: ");
-//        Serial.println(EPC);
-//      }
-//    } else if (ESV == INF) {
-//      if(EPC == GET_echo) {
-//        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-//         0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,
-//          INF, 0x01,
-//           0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
-//        sendMessage(reqIP, reqPort, resMessage);
-//        Serial.println("Sended info packet");
-//      } else {
-//        Serial.print("EPC code not found!  ");
-//        Serial.print("ESV: ");
-//        Serial.print(ESV);
-//        Serial.print(" EPC: ");
-//        Serial.println(EPC);
-//      }
-//    } else {
-//      Serial.print("ESV Code Not Found :");
-//      Serial.println(ESV);
-//    }
+    // send a packet    packet req;
+    req.readPacket(request, noBytes);
+    req.printPacket();
+    byte ESV = req.ESV;
+
+    if (ESV == Get) {
+      for(int i=0;i<req.OPC;i++){
+        byte EPC=req.properties[i].EPC;
+        
+        if (EPC == OperationStatus) {
+
+          Serial.println("Sended Status packet!");
+        } else if(EPC == PowerLimit) {
+          
+
+          Serial.println("Sended power limit");
+        } else if(EPC == Location) {
+          
+          Serial.println("Get location request, not yet!");
+        } else if(EPC == GET_echo) {
+          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+          sendMessage(reqIP, reqPort, resMessage);
+          Serial.println("Sended info packet");
+        } else if(EPC == 0xE0) {
+          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],GET_res, 0x01,EPC, 0x04, 0x00, 0x00, 0x00, 0x00}; //packet ECHONET Lite
+          sendMessage(reqIP, reqPort, resMessage);
+          Serial.println("Sended integaral medium");
+        } else if(EPC == 0xE1) {
+          float capacity = (float) ((getMaxValue() - 500) * (5.0 / 1024) * 1000 / 118) / sqrt(2) * 220;
+          thing.floatValue = capacity;
+          byte bytes[4] = {0, 0, 0, 0};
+          for (int i = 0; i < 4; i++) {
+            bytes[i] = thing.bytes[3 - i];
+          }
+          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+           EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],GET_res, 0x01,EPC, 0x04, bytes[0], bytes[1], bytes[2], bytes[3]}; //packet ECHONET Lite
+          sendMessage(reqIP, reqPort, resMessage);
+          Serial.print("Sended capacity medium ");
+          Serial.println(capacity);
+        } else {
+          Serial.print("EPC Code not found");
+          Serial.println(EPC);
+        }
+      }
+      
+    } else if (ESV == SetC) {
+      if (EPC == OperationStatus) {
+        if(EEPROM.read(100) != request[14]) {
+          EEPROM.write(100, request[14]);
+          EEPROM.commit();
+          delay(10);
+          setStatusDevice();
+        }
+        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+         EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
+          SET_res, 0x01, EPC, 0x01, EEPROM.read(100)}; //packet ECHONET Lite
+        sendMessage(reqIP, reqPort, resMessage);
+        Serial.println("Sended SET status response packet! OK!");
+      } else if (EPC == Location) {
+        //set location
+      } else if (EPC == PowerLimit) {
+        //set power limit - 2 bytes
+        if(EEPROM.read(101) != request[14]) {
+          EEPROM.write(101, request[14]);
+        }
+        if(EEPROM.read(102) != request[15]) {
+          EEPROM.write(102, request[15]);
+        }
+        EEPROM.commit();
+        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+         EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
+          SET_res, 0x01,
+           EPC, 0x02, EEPROM.read(101), EEPROM.read(102)}; //packet ECHONET Lite
+        sendMessage(reqIP, reqPort, resMessage);
+        Serial.println("Sended SET power limit response packet! OK!");
+      } else {
+        Serial.print("EPC code not found!  ");
+        Serial.print("ESV: ");
+        Serial.print(ESV);
+        Serial.print(" EPC: ");
+        Serial.println(EPC);
+      }
+    } else if(ESV == SetI) {
+      //code
+    } else if (ESV == INF_req) {
+      if(EPC == GET_echo) {
+        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+        sendMessage(reqIP, reqPort, resMessage);
+        Serial.println("Sended info packet");
+      } else {
+        Serial.print("EPC code not found!  ");
+        Serial.print("ESV: ");
+        Serial.print(ESV);
+        Serial.print(" EPC: ");
+        Serial.println(EPC);
+      }
+    } else if (ESV == INF) {
+      if(EPC == GET_echo) {
+        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
+         0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,
+          INF, 0x01,
+           0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+        sendMessage(reqIP, reqPort, resMessage);
+        Serial.println("Sended info packet");
+      } else {
+        Serial.print("EPC code not found!  ");
+        Serial.print("ESV: ");
+        Serial.print(ESV);
+        Serial.print(" EPC: ");
+        Serial.println(EPC);
+      }
+    } else {
+      Serial.print("ESV Code Not Found :");
+      Serial.println(ESV);
+    }
   } else {
     delay(1000);
     count++;
