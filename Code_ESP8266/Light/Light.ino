@@ -15,10 +15,10 @@ void sendMessage(IPAddress ip, int port, byte message[], IPAddress ipWiFi);
 const byte SetI = 0x60; // request write value (no response required)
 const byte SetC = 0x61; // request write value (response required)
 const byte Get = 0x62; // request read value
-const byte SET_res = 0x71; // response write value
-const byte GET_res = 0x72; // response read value
+const byte Set_Res = 0x71; // response write value
+const byte Get_Res = 0x72; // response read value
 const byte INF = 0x73;
-const byte INF_req = 0x63;
+const byte INF_REQ = 0x63;
 
 const byte GET_echo = 0xD6;
 
@@ -55,13 +55,25 @@ union {
 
 class property_content{
   public:
-  byte EPC, PDC;
-  byte EDT[20];
+  byte EPC=0, PDC=0;
+  byte EDT[20]={0};
 };
 class packet{
   public:
-    byte TID[2], SEOJ[3], DEOJ[3], ESV, OPC;
+    byte TID[2]={0}, SEOJ[3]={0}, DEOJ[3]={0}, ESV=0, OPC=0;
     property_content properties[5];
+    packet(){
+      
+    }
+    // Create response by request
+    packet(packet* req){
+      for(int i=0;i<2;i++){
+        TID[i]=req->TID[i];
+      }
+      for(int i=0;i<3;i++){
+        DEOJ[i]=req->SEOJ[i];
+      }
+    }
     // byte[] -> packet
     void readPacket(byte packet[], int n){
       byte SEOJ_copy[] = {packet[4], packet[5], packet[6]};
@@ -524,6 +536,13 @@ void loop() {
     packet req;
     req.readPacket(request, noBytes);
     req.printPacket();
+    
+    //set TID, DEOJ 
+    packet res(req);
+    //set SEOJ
+    for(int i=0;i<3;i++){
+      res.SEOJ[i]=EEPROM.read(97+i);
+    }
     byte ESV = req.ESV;
     Serial.print("OPC: ");
     Serial.println(req.OPC);
@@ -533,105 +552,164 @@ void loop() {
     // send a packet    packet req;
     req.readPacket(request, noBytes);
     req.printPacket();
-    byte ESV = req.ESV;
 
     if (ESV == Get) {
+      res.ESV=0x72;//Get_Res
       for(int i=0;i<req.OPC;i++){
         byte EPC=req.properties[i].EPC;
-        
-        if (EPC == OperationStatus) {
+        switch(EPC){
+          case OperationStatus:{
+            
+            res.properties[res.OPC].EPC=EPC;
+            res.properties[res.OPC].PDC=1;
+            res.properties[res.OPC].EDT[0]=EEPROM.read(100);
+            res.OPC++;
 
-          Serial.println("Sended Status packet!");
-        } else if(EPC == PowerLimit) {
-          
-
-          Serial.println("Sended power limit");
-        } else if(EPC == Location) {
-          
-          Serial.println("Get location request, not yet!");
-        } else if(EPC == GET_echo) {
-          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
-          sendMessage(reqIP, reqPort, resMessage);
-          Serial.println("Sended info packet");
-        } else if(EPC == 0xE0) {
-          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],GET_res, 0x01,EPC, 0x04, 0x00, 0x00, 0x00, 0x00}; //packet ECHONET Lite
-          sendMessage(reqIP, reqPort, resMessage);
-          Serial.println("Sended integaral medium");
-        } else if(EPC == 0xE1) {
-          float capacity = (float) ((getMaxValue() - 500) * (5.0 / 1024) * 1000 / 118) / sqrt(2) * 220;
-          thing.floatValue = capacity;
-          byte bytes[4] = {0, 0, 0, 0};
-          for (int i = 0; i < 4; i++) {
-            bytes[i] = thing.bytes[3 - i];
+            Serial.println("Sended Status packet!");
+            break;
           }
-          byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-           EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],GET_res, 0x01,EPC, 0x04, bytes[0], bytes[1], bytes[2], bytes[3]}; //packet ECHONET Lite
-          sendMessage(reqIP, reqPort, resMessage);
-          Serial.print("Sended capacity medium ");
-          Serial.println(capacity);
-        } else {
-          Serial.print("EPC Code not found");
-          Serial.println(EPC);
+          case PowerLimit:{
+            res.properties[res.OPC].EPC=EPC;
+            res.properties[res.OPC].PDC=2;
+            for(int i=0;i<res.properties[res.OPC].PDC;i++){
+              res.properties[res.OPC].EDT[i]=EEPROM.read(101+i);
+            }
+            res.OPC++;
+
+            Serial.println("Sended power limit");
+            break;
+          }
+          //Medium capacity
+          case 0xE1:{
+            float capacity = (float) ((getMaxValue() - 500) * (5.0 / 1024) * 1000 / 118) / sqrt(2) * 220;
+            thing.floatValue = capacity;
+            byte bytes[4] = {0, 0, 0, 0};
+            for (int i = 0; i < 4; i++) {
+              bytes[i] = thing.bytes[3 - i];
+            }
+            res.properties[res.OPC].EPC=EPC;
+            res.properties[res.OPC].PDC=4;
+            for(int i=0;i<res.properties[res.OPC].PDC;i++){
+              res.properties[res.OPC].EDT[i]=bytes[i];
+            }
+            res.OPC++;
+
+            Serial.print("Sended capacity medium ");
+            Serial.println(capacity);
+            break;
+          }
+          case GET_echo:{
+            byte resMessage[] = {0x10, 0x81, req.TID[0], req.TID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+            sendMessage(reqIP, reqPort, resMessage);
+            Serial.println("Sended info packet");
+            break;
+          }
+          case 0xE0:{
+            byte resMessage[] = {0x10, 0x81, req.TID[0], req.TID[1],EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req.SEOJ[0], req.SEOJ[1], req.SEOJ[2],Get_Res, 0x01,EPC, 0x04, 0x00, 0x00, 0x00, 0x00}; //packet ECHONET Lite
+            sendMessage(reqIP, reqPort, resMessage);
+            Serial.println("Sended integaral medium");
+          }
+          default:{
+            Serial.print("EPC Code not found");
+            Serial.println(EPC);
+          }
         }
       }
-      
+      sendMessage(reqIP, reqPort, res.writePacket());
     } else if (ESV == SetC) {
-      if (EPC == OperationStatus) {
-        if(EEPROM.read(100) != request[14]) {
-          EEPROM.write(100, request[14]);
-          EEPROM.commit();
-          delay(10);
-          setStatusDevice();
+        res.ESV=Set_Res;
+        for(int i=0;i<req.OPC;i++){
+          byte EPC=req.properties[i].EPC;
+          switch(EPC){
+            case OperationStatus:{
+              int EEPROM_index_begin=100;
+              for(int j=0;j<req.properties[i].PDC;j++){
+                if(EEPROM.read(EEPROM_index_begin+j) != req.properties[i].EDT[j]) {
+                  EEPROM.write(EEPROM_index_begin+j, req.properties[i].EDT[j]);                  
+                  delay(10);
+                }
+              }
+              setStatusDevice();
+              res.properties[i].EPC=EPC;
+              res.properties[i].PDC=req.properties[i].PDC;
+              for(int j=0;j<res.properties[i].PDC;j++){
+                res.properties[i].EDT[j]=req.properties[i].EDT[j];
+              }
+              
+              Serial.println("Sended SET status response packet! OK!");
+              
+              break;
+            }
+            case PowerLimit:{
+              int EEPROM_index_begin=101;
+              for(int j=0;j<req.properties[i].PDC;j++){
+                if(EEPROM.read(EEPROM_index_begin+j) != req.properties[i].EDT[j]) {
+                  EEPROM.write(EEPROM_index_begin+j, req.properties[i].EDT[j]);
+                  delay(10);
+                }
+              }
+              res.properties[i].EPC=EPC;
+              res.properties[i].PDC=req.properties[i].PDC;
+              for(int j=0;j<res.properties[i].PDC;j++){
+                res.properties[i].EDT[j]=req.properties[i].EDT[j];
+              }
+              
+              
+              Serial.println("Sended SET power limit response packet! OK!");
+              break;
+            }
+            default:{
+              Serial.print("EPC code not found!  ");
+              Serial.print("ESV: ");
+              Serial.print(ESV);
+              Serial.print(" EPC: ");
+              Serial.println(EPC);
+            }
+          }
         }
-        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-         EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
-          SET_res, 0x01, EPC, 0x01, EEPROM.read(100)}; //packet ECHONET Lite
-        sendMessage(reqIP, reqPort, resMessage);
-        Serial.println("Sended SET status response packet! OK!");
-      } else if (EPC == Location) {
-        //set location
-      } else if (EPC == PowerLimit) {
-        //set power limit - 2 bytes
-        if(EEPROM.read(101) != request[14]) {
-          EEPROM.write(101, request[14]);
-        }
-        if(EEPROM.read(102) != request[15]) {
-          EEPROM.write(102, request[15]);
-        }
-        EEPROM.commit();
-        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-         EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req_EOJ[0], req_EOJ[1], req_EOJ[2],
-          SET_res, 0x01,
-           EPC, 0x02, EEPROM.read(101), EEPROM.read(102)}; //packet ECHONET Lite
-        sendMessage(reqIP, reqPort, resMessage);
-        Serial.println("Sended SET power limit response packet! OK!");
-      } else {
-        Serial.print("EPC code not found!  ");
-        Serial.print("ESV: ");
-        Serial.print(ESV);
-        Serial.print(" EPC: ");
-        Serial.println(EPC);
-      }
+        sendMessage(reqIP, reqPort, res.writePacket());
+        
     } else if(ESV == SetI) {
-      //code
-    } else if (ESV == INF_req) {
+        for(int i=0;i<req.OPC;i++){
+          byte EPC=req.properties[i].EPC;
+          switch(EPC){
+            case OperationStatus:{
+              int EEPROM_index_begin=100;
+              for(int j=0;j<req.properties[i].PDC;j++){
+                if(EEPROM.read(EEPROM_index_begin+j) != req.properties[i].EDT[j]) {
+                  EEPROM.write(EEPROM_index_begin+j, req.properties[i].EDT[j]);                  
+                  delay(10);
+                }
+              }
+              setStatusDevice();
+              Serial.println("Set Status");
+              
+              break;
+            }
+            case PowerLimit:{
+              int EEPROM_index_begin=101;
+              for(int j=0;j<req.properties[i].PDC;j++){
+                if(EEPROM.read(EEPROM_index_begin+j) != req.properties[i].EDT[j]) {
+                  EEPROM.write(EEPROM_index_begin+j, req.properties[i].EDT[j]);
+                  delay(10);
+                }
+              }
+              Serial.println("Set PowerLimit");
+              break;
+            }
+            default:{
+              Serial.print("EPC code not found!  ");
+              Serial.print("ESV: ");
+              Serial.print(ESV);
+              Serial.print(" EPC: ");
+              Serial.println(EPC);
+            }
+          }
+        }
+    } else if (ESV == INF_REQ) {
+      byte EPC=req.properties[0].EPC;
       if(EPC == GET_echo) {
-        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
-        sendMessage(reqIP, reqPort, resMessage);
-        Serial.println("Sended info packet");
-      } else {
-        Serial.print("EPC code not found!  ");
-        Serial.print("ESV: ");
-        Serial.print(ESV);
-        Serial.print(" EPC: ");
-        Serial.println(EPC);
-      }
-    } else if (ESV == INF) {
-      if(EPC == GET_echo) {
-        byte resMessage[] = {0x10, 0x81, trans_ID[0], trans_ID[1],
-         0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,
-          INF, 0x01,
-           0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+        byte resMessage[] = {0x10, 0x81, req.TID[0], req.TID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
         sendMessage(reqIP, reqPort, resMessage);
         Serial.println("Sended info packet");
       } else {
