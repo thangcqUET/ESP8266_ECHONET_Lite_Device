@@ -471,6 +471,7 @@ void createWebServer(int webtype)
       String qX3 = server.arg("X3");
       if (qOstatus.length() > 0 && qPower.length() > 0 && qX1.length() > 0 && qX2.length() > 0 && qX3.length() > 0 && qLocation.length()>0) {
         Serial.println("Update status and power limit");
+
         if (qOstatus.equals("ON")) {
           EEPROM.write(100, 0x30);
           digitalWrite(LED_BUILTIN, HIGH);
@@ -503,6 +504,7 @@ void createWebServer(int webtype)
           EEPROM.write(103, qLocation.toInt());
         }
         EEPROM.commit();
+        
       }
       server.sendContent("HTTP/1.1 301 OK\r\nLocation: /\r\nCache-Control: no-cache\r\n\r\n");
     });
@@ -596,6 +598,10 @@ void loop() {
             for(int i=0;i<res.properties[res.OPC].PDC;i++){
               res.properties[res.OPC].EDT[i]=EEPROM.read(103+i);
             }
+            res.OPC++;
+
+            Serial.println("Sended Location packet!");
+            break;
           }
           case OperationStatus:{
             
@@ -668,6 +674,8 @@ void loop() {
 //      }
 //      Serial.println("-------");
 //      //
+      Serial.println("Response: ");
+      res.printPacket();
       byte *a=res.writePacket();
       sendMessage(reqIP, reqPort, a);
       free(a);
@@ -722,6 +730,8 @@ void loop() {
             }
           }
         }
+        Serial.println("Response: ");
+        res.printPacket();
         byte *a=res.writePacket();
         sendMessage(reqIP, reqPort, a);
         free(a);
