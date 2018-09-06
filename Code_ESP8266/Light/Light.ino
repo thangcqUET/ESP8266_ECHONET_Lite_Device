@@ -9,8 +9,9 @@ WiFiUDP UDPReceiver;
 
 ESP8266WebServer server(80);
 
-void sendMessage(IPAddress ip, int port, byte message[], IPAddress ipWiFi);
 
+
+const int Relay_Pin=D1;
 // ESV value
 const byte SetI = 0x60; // request write value (no response required)
 const byte SetC = 0x61; // request write value (response required)
@@ -43,9 +44,29 @@ const int portMulti = 3610;
 const char* ssid = "AP_ESP8266";
 const char* passphrase = "12345678";
 
+int sizeOfResponsePacket=0;
 String st;
 String content;
 int statusCode;
+
+void sendMessage(IPAddress ip, int port, byte* message) {
+//  //fixbug
+//  Serial.println("Before send:");
+//      for(int i=0;i<sizeOfResponsePacket;i++){
+//        Serial.print(message[i]);
+//        Serial.print(" ");
+//      }
+//  Serial.println();
+//  //
+  UDPSender.beginPacket(ip, port);
+  for (int i = 0; i < sizeOfResponsePacket; i++) {
+    UDPSender.write(message[i]);
+    Serial.print(message[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+  UDPSender.endPacket();
+}
 
 union {
   float floatValue;
@@ -65,13 +86,14 @@ class packet{
     packet(){
       
     }
-    // Create response by request
+//     Create response by request
     packet(packet* req){
+//      Serial.println("Da chay ham khoi tao111111111111111111111111111111111111111111111111111111111111111111111");
       for(int i=0;i<2;i++){
-        TID[i]=req->TID[i];
+        this->TID[i]=req->TID[i];
       }
       for(int i=0;i<3;i++){
-        DEOJ[i]=req->SEOJ[i];
+        this->DEOJ[i]=req->SEOJ[i];
       }
     }
     // byte[] -> packet
@@ -103,7 +125,7 @@ class packet{
         n+=(properties[i].PDC+2);
       }
       n+=12;
-      byte packet[n];
+      byte *packet=(byte*)malloc(n*sizeof(byte));
       for(int i=0;i<12;i++){
         packet[i]=head_packet[i];
       }
@@ -118,6 +140,15 @@ class packet{
         }
         j++;
       }
+////      //fixbug
+//      Serial.println("Write_Packet:");
+//      for(int i=0;i<n;i++){
+//        Serial.print(packet[i]);
+//        Serial.print(" ");
+//      }
+//      Serial.println();
+////      //
+      sizeOfResponsePacket=n;
       return packet;
     }
     void printPacket(){
@@ -172,7 +203,7 @@ void setup() {
   Serial.begin(115200);
   EEPROM.begin(512);
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(4, OUTPUT);
+  pinMode(Relay_Pin, OUTPUT);
   pinMode(A0, INPUT);
   delay(10);
   Serial.println("**************************************");
@@ -219,22 +250,13 @@ void setup() {
 
       WiFi.softAPdisconnect(true);
       // check Status
-      byte deviceStatus = EEPROM.read(100);
-      if (deviceStatus == 0x30) {
-        digitalWrite(LED_BUILTIN, HIGH);
-        digitalWrite(4, HIGH);
-        Serial.println("Device on");
-      } else if (deviceStatus == 0x31) {
-        digitalWrite(LED_BUILTIN, LOW);
-        digitalWrite(4, LOW);
-        Serial.println("Device off");
-      } else {
-        Serial.println("Can't get deviceStatus. Set it!");
-      }
+      setStatusDevice();
+      return;
     }
-  } else {
+  } 
+  
     setupAP();
-  }
+  
 }
 
 bool testWifi(void) {
@@ -385,7 +407,7 @@ void createWebServer(int webtype)
       EEPROM.read(100) == 0x31 ? content += "checked" : "";
       content += ">OFF</td></tr><tr><td>Power Limited   : </td><td><input type='number' name='PowerLimit' value='";
       content += int((EEPROM.read(102) & 0xff) << 8) | EEPROM.read(101);
-      content += "'/>&nbsp;W</td></tr><tr><td>Location : </td><td><input type='text' name='Location' value='Not set yet' disabled/></td></tr><tr><td></td><td><input type='submit' name='Submit'/></td></tr></table></center></form>";
+      content += "'/>&nbsp;W</td></tr><tr><td>Location : </td><td><input type='text' name='Location' value='"+(String)EEPROM.read(103)+"'/></td></tr><tr><td></td><td><input type='submit' name='Submit'/></td></tr></table></center></form>";
       content += "<form method='get' action='changewifi'><center><p><p>WiFi: <input type='submit' value='Choose'></center></form></body></html>";
       server.send(200, "text/html", content);
     });
@@ -443,10 +465,11 @@ void createWebServer(int webtype)
     server.on("/update", []() {
       String qOstatus = server.arg("OperationStatus");
       String qPower = server.arg("PowerLimit");
+      String qLocation=server.arg("Location");
       String qX1 = server.arg("X1");
       String qX2 = server.arg("X2");
       String qX3 = server.arg("X3");
-      if (qOstatus.length() > 0 && qPower.length() > 0 && qX1.length() > 0 && qX2.length() > 0 && qX3.length() > 0) {
+      if (qOstatus.length() > 0 && qPower.length() > 0 && qX1.length() > 0 && qX2.length() > 0 && qX3.length() > 0 && qLocation.length()>0) {
         Serial.println("Update status and power limit");
         if (qOstatus.equals("ON")) {
           EEPROM.write(100, 0x30);
@@ -475,6 +498,9 @@ void createWebServer(int webtype)
         }
         if(EEPROM.read(99) != qX3.toInt()) {
           EEPROM.write(99, qX3.toInt());
+        }
+        if(EEPROM.read(103) != qLocation.toInt()){
+          EEPROM.write(103, qLocation.toInt());
         }
         EEPROM.commit();
       }
@@ -534,11 +560,12 @@ void loop() {
 //    byte ESV = request[10];
 //    byte EPC = request[12];
     packet req;
+    // send a packet    packet req;
     req.readPacket(request, noBytes);
     req.printPacket();
     
     //set TID, DEOJ 
-    packet res(req);
+    packet res(&req);
     //set SEOJ
     for(int i=0;i<3;i++){
       res.SEOJ[i]=EEPROM.read(97+i);
@@ -549,15 +576,27 @@ void loop() {
     IPAddress reqIP = UDPReceiver.remoteIP();
     int reqPort = UDPReceiver.remotePort();
     
-    // send a packet    packet req;
-    req.readPacket(request, noBytes);
-    req.printPacket();
-
+    
+//    req.readPacket(request, noBytes);
+//    //fixbug
+//    Serial.println("Truoc xu ly");
+//    Serial.println("Request: ");
+//    req.printPacket();
+//    Serial.println("Response: ");
+//    res.printPacket();
+//    //
     if (ESV == Get) {
       res.ESV=0x72;//Get_Res
       for(int i=0;i<req.OPC;i++){
         byte EPC=req.properties[i].EPC;
         switch(EPC){
+          case Location:{
+            res.properties[res.OPC].EPC=EPC;
+            res.properties[res.OPC].PDC=1;
+            for(int i=0;i<res.properties[res.OPC].PDC;i++){
+              res.properties[res.OPC].EDT[i]=EEPROM.read(103+i);
+            }
+          }
           case OperationStatus:{
             
             res.properties[res.OPC].EPC=EPC;
@@ -615,7 +654,23 @@ void loop() {
           }
         }
       }
-      sendMessage(reqIP, reqPort, res.writePacket());
+//      //fixbug
+//      Serial.println("Sau xu ly");
+//      Serial.println("Request: ");
+//      req.printPacket();
+//      Serial.println("Response: ");
+//      res.printPacket();
+//      Serial.println("Array response: ");
+//      byte *a=res.writePacket();
+//      for(int i=0;i<sizeOfResponsePacket;i++){
+//        Serial.print(a[i]);
+//        Serial.print(" ");
+//      }
+//      Serial.println("-------");
+//      //
+      byte *a=res.writePacket();
+      sendMessage(reqIP, reqPort, a);
+      free(a);
     } else if (ESV == SetC) {
         res.ESV=Set_Res;
         for(int i=0;i<req.OPC;i++){
@@ -667,7 +722,9 @@ void loop() {
             }
           }
         }
-        sendMessage(reqIP, reqPort, res.writePacket());
+        byte *a=res.writePacket();
+        sendMessage(reqIP, reqPort, a);
+        free(a);
         
     } else if(ESV == SetI) {
         for(int i=0;i<req.OPC;i++){
@@ -755,23 +812,17 @@ int getMaxValue() {
   return sensorMax - 3;
 }
 
-void sendMessage(IPAddress ip, int port, byte message[]) {
-  UDPSender.beginPacket(ip, port);
-  for (int i = 0; i < sizeof(message); i++) {
-    UDPSender.write(message[i]);
-  }
-  UDPSender.endPacket();
-}
+
 
 void setStatusDevice() {
   byte deviceStatus = EEPROM.read(100);
   if (deviceStatus == 0x30) {
     digitalWrite(LED_BUILTIN, HIGH);
-    digitalWrite(4, HIGH);
+    digitalWrite(Relay_Pin, HIGH);
     Serial.println("Device on");
   } else if (deviceStatus == 0x31) {
     digitalWrite(LED_BUILTIN, LOW);
-    digitalWrite(4, LOW);
+    digitalWrite(Relay_Pin, LOW);
     Serial.println("Device off");
   } else {
     Serial.println("Can't get deviceStatus. Set it!");
