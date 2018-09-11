@@ -475,12 +475,12 @@ void createWebServer(int webtype)
         if (qOstatus.equals("ON")) {
           EEPROM.write(100, 0x30);
           digitalWrite(LED_BUILTIN, HIGH);
-          digitalWrite(4, HIGH);
+          digitalWrite(Relay_Pin, HIGH);
           Serial.println("Device on");
         } else if (qOstatus.equals("OFF")) {
           EEPROM.write(100, 0x31);
           digitalWrite(LED_BUILTIN, LOW);
-          digitalWrite(4, LOW);
+          digitalWrite(Relay_Pin, LOW);
           Serial.println("Device off");
         } else {
           Serial.println("Update status failed");
