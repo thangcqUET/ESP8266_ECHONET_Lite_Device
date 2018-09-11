@@ -1,0 +1,14 @@
+<component name="ArtifactManager">
+  <artifact name="HomeGateway:jar">
+    <output-path>$USER_HOME$/Desktop/MyHome/HomeGateway</output-path>
+    <root id="root">
+      <element id="archive" name="HomeGateway.jar">
+        <element id="module-output" name="HomeGateway" />
+      </element>
+      <element id="library" level="project" name="java-json" />
+      <element id="library" level="project" name="mysql-connector-java-5.1.6-bin" />
+      <element id="library" level="project" name="org.eclipse.paho.client.mqttv3-1.1.1" />
+      <element id="library" level="project" name="json-simple-1.1" />
+    </root>
+  </artifact>
+</component>
