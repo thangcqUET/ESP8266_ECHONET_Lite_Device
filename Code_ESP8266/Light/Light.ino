@@ -3,7 +3,7 @@
 #include <EEPROM.h>
 #include <WiFiUdp.h>
 #include <WiFiClient.h>
-
+#include <DHT.h>
 WiFiUDP UDPSender;
 WiFiUDP UDPReceiver;
 
@@ -11,7 +11,9 @@ ESP8266WebServer server(80);
 
 
 
-const int Relay_Pin=D1;
+int Relay_Pin=D1;
+int DHT11_Pin=D2;
+DHT dht(DHT11_Pin,DHT11);
 // ESV value
 const byte SetI = 0x60; // request write value (no response required)
 const byte SetC = 0x61; // request write value (response required)
@@ -37,6 +39,21 @@ const byte Capacity_lar = 0xE3; //Large-capacity sensor instantaneous electric e
 const byte Cumulative_log = 0xE4; //Cumulative amounts of electric energy measurement log 192B 0,0001kWh
 const byte Effective_voltage = 0xE5; //Effective voltage value 2B V
 
+/*
+ * EEPROM
+ * 0-31 : ssid 
+ * 32 - 96:pass 
+ * quantity EOJ: 97
+ * EOJ code: X1-X2-X3: 98 -130
+ * future:131- 150 
+ * Status: 151 
+ * Power limit: 152- 153 
+ * Location: 154 
+ * Port ESP8266: 
+ */
+
+
+
 const IPAddress ipMulti = {224, 0, 23, 0};
 const int portMulti = 3610;
 
@@ -49,24 +66,10 @@ String st;
 String content;
 int statusCode;
 
-void sendMessage(IPAddress ip, int port, byte* message) {
-//  //fixbug
-//  Serial.println("Before send:");
-//      for(int i=0;i<sizeOfResponsePacket;i++){
-//        Serial.print(message[i]);
-//        Serial.print(" ");
-//      }
-//  Serial.println();
-//  //
-  UDPSender.beginPacket(ip, port);
-  for (int i = 0; i < sizeOfResponsePacket; i++) {
-    UDPSender.write(message[i]);
-    Serial.print(message[i]);
-    Serial.print(" ");
-  }
-  Serial.println();
-  UDPSender.endPacket();
-}
+int getMaxValue();
+void setStatusDevice();
+void sendEchoNode(IPAddress ipMulti, int portMulti );
+void sendMessage(IPAddress ip, int port, byte* message);
 
 union {
   float floatValue;
@@ -101,6 +104,10 @@ class packet{
       byte SEOJ_copy[] = {packet[4], packet[5], packet[6]};
       for(int i=0;i<3;i++){
         SEOJ[i]=SEOJ_copy[i];
+      }
+      byte DEOJ_copy[] = {packet[7], packet[8], packet[9]};
+      for(int i=0;i<3;i++){
+        DEOJ[i]=DEOJ_copy[i];
       }
       byte TID_copy[] = {packet[2], packet[3]};
       for(int i=0;i<3;i++){
@@ -203,8 +210,11 @@ void setup() {
   Serial.begin(115200);
   EEPROM.begin(512);
   pinMode(LED_BUILTIN, OUTPUT);
+  //relay
   pinMode(Relay_Pin, OUTPUT);
   pinMode(A0, INPUT);
+  //dht11 temperature humidity
+  dht.begin();
   delay(10);
   Serial.println("**************************************");
   Serial.println("Startup");
@@ -239,14 +249,10 @@ void setup() {
       launchWeb(0);
 
       UDPReceiver.beginMulticast(WiFi.localIP(),  ipMulti, portMulti);
-
-      Serial.println("ECHO ELECTRIC ENERGY SENSOR NODE");
-      byte echoMyNode[] = {0x10, 0x81, 0x00, 0x00, 0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01, 0x73, 0x01, 0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)};
-      UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
-      for (int i = 0; i < sizeof(echoMyNode); i++) {
-       UDPSender.write(echoMyNode[i]);
-      }
-      UDPSender.endPacket();
+      Serial.println("ECHO NODE");
+      //Node Profile Class: 0xD5 Instance list notification
+      sendEchoNode(ipMulti, portMulti);
+      
 
       WiFi.softAPdisconnect(true);
       // check Status
@@ -399,15 +405,31 @@ void createWebServer(int webtype)
       //      server.send(200, "application/json", "{\"IP\":\"" + ipStr + "\"}");
       content = "<html><head><title>Update My Electric Energy Sensor Infomation</title></head><body style='font-family:Verdana'><form action='update' method='get'>";
       content += "<center><h3>My Electric Energy Sensor Infomation</h3><h4>IP Address : " + ipStr + "</h4><hr/><table><tr>";
-      content += "<tr><td>EOJ Code : </td><td><input type='text' name='X1'/ value='" + (String)EEPROM.read(97) + "' size='3'><input type='text' name='X2'/ value='" + (String)EEPROM.read(98) + "' size='3'>";
-      content += "<input type='text' name='X3'/ value='" + (String)EEPROM.read(99) + "' size='3'><p style='font-size:11'>Example: 0x00 = 0; 0x22 = 34; 0x01 = 1</p></td></tr>";
+      //
+      content +="<tr>";
+      content +="<td>Number of EOJs: </td>";
+      content +="<td><input type='text' name='NumOfEOJs' value='" + (String)EEPROM.read(97) + "'size='3'></td>";
+      content +="</tr>";
+      
+      for(int i=0;i<11;i++){
+        content +="<tr>";
+        content +="<td>EOJ Code : </td>";
+        content +="<td><input type='text' name='X"+(String)(3*i+0)+"' value='" + (String)EEPROM.read(98+3*i+0) + "' size='3'></td>";
+        content +="<td><input type='text' name='X"+(String)(3*i+1)+"' value='" + (String)EEPROM.read(98+3*i+1) + "' size='3'></td>";
+        content +="<td><input type='text' name='X"+(String)(3*i+2)+"' value='" + (String)EEPROM.read(98+3*i+2) + "' size='3'></td>";
+        content +="</tr>";
+      }
+      content +="<tr>"; 
+      content +="<td><p style='font-size:11'>Example: 0x00 = 0; 0x22 = 34; 0x01 = 1</p></td>";
+      content +="</tr>"; 
+      //
       content += "<td>Operation Status : </td><td><input type='radio' value='ON' name='OperationStatus'";
-      EEPROM.read(100) == 0x30 ? content += "checked" : "";
+      EEPROM.read(161) == 0x30 ? content += "checked" : "";
       content += ">ON<input type='radio' value='OFF' name='OperationStatus'";
-      EEPROM.read(100) == 0x31 ? content += "checked" : "";
+      EEPROM.read(161) == 0x31 ? content += "checked" : "";
       content += ">OFF</td></tr><tr><td>Power Limited   : </td><td><input type='number' name='PowerLimit' value='";
-      content += int((EEPROM.read(102) & 0xff) << 8) | EEPROM.read(101);
-      content += "'/>&nbsp;W</td></tr><tr><td>Location : </td><td><input type='text' name='Location' value='"+(String)EEPROM.read(103)+"'/></td></tr><tr><td></td><td><input type='submit' name='Submit'/></td></tr></table></center></form>";
+      content += int((EEPROM.read(163) & 0xff) << 8) | EEPROM.read(162);
+      content += "'/>&nbsp;W</td></tr><tr><td>Location : </td><td><input type='text' name='Location' value='"+(String)EEPROM.read(164)+"'/></td></tr><tr><td></td><td><input type='submit' name='Submit'/></td></tr></table></center></form>";
       content += "<form method='get' action='changewifi'><center><p><p>WiFi: <input type='submit' value='Choose'></center></form></body></html>";
       server.send(200, "text/html", content);
     });
@@ -463,45 +485,52 @@ void createWebServer(int webtype)
     });
 
     server.on("/update", []() {
+      bool testX=true;
       String qOstatus = server.arg("OperationStatus");
       String qPower = server.arg("PowerLimit");
       String qLocation=server.arg("Location");
-      String qX1 = server.arg("X1");
-      String qX2 = server.arg("X2");
-      String qX3 = server.arg("X3");
-      if (qOstatus.length() > 0 && qPower.length() > 0 && qX1.length() > 0 && qX2.length() > 0 && qX3.length() > 0 && qLocation.length()>0) {
+      String qNumOfEOJs=server.arg("NumOfEOJs");
+      if(qNumOfEOJs.length()==0) testX=false;
+      String qX[qNumOfEOJs.toInt()*3];
+      for(int i=0;i<qNumOfEOJs.toInt()*3;i++){
+        String temp="X"+(String)(i);
+        qX[i] = server.arg(temp);
+        if(qX[i].length()==0) testX=false;
+      }
+      
+      if (qOstatus.length() > 0 && qPower.length() > 0 && qLocation.length()>0 && testX) {
         Serial.println("Update status and power limit");
 
         if (qOstatus.equals("ON")) {
-          EEPROM.write(100, 0x30);
+          EEPROM.write(161, 0x30);
           digitalWrite(LED_BUILTIN, HIGH);
           digitalWrite(Relay_Pin, HIGH);
           Serial.println("Device on");
         } else if (qOstatus.equals("OFF")) {
-          EEPROM.write(100, 0x31);
+          EEPROM.write(161, 0x31);
           digitalWrite(LED_BUILTIN, LOW);
           digitalWrite(Relay_Pin, LOW);
           Serial.println("Device off");
         } else {
           Serial.println("Update status failed");
         }
-        if(EEPROM.read(101) != (qPower.toInt() & 0xff)) {
-          EEPROM.write(101, qPower.toInt() & 0xff);
+        
+        if(EEPROM.read(162) != (qPower.toInt() & 0xff)) {
+          EEPROM.write(162, qPower.toInt() & 0xff);
         }
-        if(EEPROM.read(102) != ((qPower.toInt() >> 8) & 0xff)) {
-          EEPROM.write(102, (qPower.toInt() >> 8) & 0xff);
+        if(EEPROM.read(163) != ((qPower.toInt() >> 8) & 0xff)) {
+          EEPROM.write(163, (qPower.toInt() >> 8) & 0xff);
         }
-        if(EEPROM.read(97) != qX1.toInt()) {
-          EEPROM.write(97, qX1.toInt());
+        if(EEPROM.read(97) != (qNumOfEOJs.toInt())) {
+          EEPROM.write(97, qNumOfEOJs.toInt());
         }
-        if(EEPROM.read(98) != qX2.toInt()) {
-          EEPROM.write(98, qX2.toInt());
+        for(int i=0;i<qNumOfEOJs.toInt()*3;i++){
+          if(EEPROM.read(98+i) != qX[i].toInt()) {
+            EEPROM.write(98+i, qX[i].toInt());
+          }
         }
-        if(EEPROM.read(99) != qX3.toInt()) {
-          EEPROM.write(99, qX3.toInt());
-        }
-        if(EEPROM.read(103) != qLocation.toInt()){
-          EEPROM.write(103, qLocation.toInt());
+        if(EEPROM.read(164) != qLocation.toInt()){
+          EEPROM.write(164, qLocation.toInt());
         }
         EEPROM.commit();
         
@@ -536,7 +565,7 @@ String scanWifi() {
 int count = 0;
 void loop() {
   server.handleClient();
-/*
+/*h'
   byte deviceStatus = EEPROM.read(100);
   Serial.println(deviceStatus);
   if (deviceStatus == 0x30) {
@@ -570,7 +599,7 @@ void loop() {
     packet res(&req);
     //set SEOJ
     for(int i=0;i<3;i++){
-      res.SEOJ[i]=EEPROM.read(97+i);
+      res.SEOJ[i]=req.DEOJ[i];
     }
     byte ESV = req.ESV;
     Serial.print("OPC: ");
@@ -596,7 +625,7 @@ void loop() {
             res.properties[res.OPC].EPC=EPC;
             res.properties[res.OPC].PDC=1;
             for(int i=0;i<res.properties[res.OPC].PDC;i++){
-              res.properties[res.OPC].EDT[i]=EEPROM.read(103+i);
+              res.properties[res.OPC].EDT[i]=EEPROM.read(164+i);
             }
             res.OPC++;
 
@@ -607,7 +636,7 @@ void loop() {
             
             res.properties[res.OPC].EPC=EPC;
             res.properties[res.OPC].PDC=1;
-            res.properties[res.OPC].EDT[0]=EEPROM.read(100);
+            res.properties[res.OPC].EDT[0]=EEPROM.read(161);
             res.OPC++;
 
             Serial.println("Sended Status packet!");
@@ -617,42 +646,76 @@ void loop() {
             res.properties[res.OPC].EPC=EPC;
             res.properties[res.OPC].PDC=2;
             for(int i=0;i<res.properties[res.OPC].PDC;i++){
-              res.properties[res.OPC].EDT[i]=EEPROM.read(101+i);
+              res.properties[res.OPC].EDT[i]=EEPROM.read(162+i);
             }
             res.OPC++;
 
             Serial.println("Sended power limit");
             break;
           }
-          //Medium capacity
+          
           case 0xE1:{
-            float capacity = (float) ((getMaxValue() - 500) * (5.0 / 1024) * 1000 / 118) / sqrt(2) * 220;
-            thing.floatValue = capacity;
-            byte bytes[4] = {0, 0, 0, 0};
-            for (int i = 0; i < 4; i++) {
-              bytes[i] = thing.bytes[3 - i];
+            //Medium capacity
+            if(req.DEOJ[0]==0&&req.DEOJ[1]==34){
+              float capacity = (float) ((getMaxValue() - 500) * (5.0 / 1024) * 1000 / 118) / sqrt(2) * 220;
+              thing.floatValue = capacity;
+              byte bytes[4] = {0, 0, 0, 0};
+              for (int i = 0; i < 4; i++) {
+                bytes[i] = thing.bytes[3 - i];
+              }
+              res.properties[res.OPC].EPC=EPC;
+              res.properties[res.OPC].PDC=4;
+              for(int i=0;i<res.properties[res.OPC].PDC;i++){
+                res.properties[res.OPC].EDT[i]=bytes[i];
+              }
+              res.OPC++;
+  
+              Serial.print("Sended capacity medium ");
+              Serial.println(capacity);
+              break;  
             }
-            res.properties[res.OPC].EPC=EPC;
-            res.properties[res.OPC].PDC=4;
-            for(int i=0;i<res.properties[res.OPC].PDC;i++){
-              res.properties[res.OPC].EDT[i]=bytes[i];
-            }
-            res.OPC++;
-
-            Serial.print("Sended capacity medium ");
-            Serial.println(capacity);
-            break;
           }
           case GET_echo:{
-            byte resMessage[] = {0x10, 0x81, req.TID[0], req.TID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
+            byte resMessage[] = {0x10, 0x81, req.TID[0], req.TID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, req.DEOJ[0], req.DEOJ[1], req.DEOJ[2]}; //packet ECHONET Lite
             sendMessage(reqIP, reqPort, resMessage);
             Serial.println("Sended info packet");
             break;
           }
+          
           case 0xE0:{
-            byte resMessage[] = {0x10, 0x81, req.TID[0], req.TID[1],EEPROM.read(97), EEPROM.read(98), EEPROM.read(99), req.SEOJ[0], req.SEOJ[1], req.SEOJ[2],Get_Res, 0x01,EPC, 0x04, 0x00, 0x00, 0x00, 0x00}; //packet ECHONET Lite
-            sendMessage(reqIP, reqPort, resMessage);
-            Serial.println("Sended integaral medium");
+            //Humidity
+            if(EEPROM.read(98)==0x00 &&EEPROM.read(99)==0x12){
+              byte humidity=(byte)dht.readHumidity();
+              res.properties[res.OPC].EPC=EPC;
+              res.properties[res.OPC].PDC=1;
+              for(int i=0;i<res.properties[res.OPC].PDC;i++){
+                res.properties[res.OPC].EDT[i]=humidity;
+              }
+              res.OPC++;
+  
+              Serial.print("Sended Humidity: ");
+              Serial.println(humidity);
+              break;  
+            }
+            //Temperature
+            else if(EEPROM.read(98)==0x00 &&EEPROM.read(99)==0x11){
+              byte temperature=(byte)dht.readTemperature();
+              res.properties[res.OPC].EPC=EPC;
+              res.properties[res.OPC].PDC=2;
+              //for(int i=0;i<res.properties[res.OPC].PDC;i++){
+                res.properties[res.OPC].EDT[0]=0;
+                res.properties[res.OPC].EDT[1]=temperature;
+              //}
+              res.OPC++;
+  
+              Serial.print("Sended Temperature: ");
+              Serial.println(temperature);
+              break;  
+            }
+            //
+//            byte resMessage[] = {0x10, 0x81, req.TID[0], req.TID[1],EEPROM.read(98), EEPROM.read(99), EEPROM.read(100), req.SEOJ[0], req.SEOJ[1], req.SEOJ[2],Get_Res, 0x01,EPC, 0x04, 0x00, 0x00, 0x00, 0x00}; //packet ECHONET Lite
+//            sendMessage(reqIP, reqPort, resMessage);
+//            Serial.println("Sended integaral medium");
           }
           default:{
             Serial.print("EPC Code not found");
@@ -685,7 +748,7 @@ void loop() {
           byte EPC=req.properties[i].EPC;
           switch(EPC){
             case OperationStatus:{
-              int EEPROM_index_begin=100;
+              int EEPROM_index_begin=161;
               for(int j=0;j<req.properties[i].PDC;j++){
                 if(EEPROM.read(EEPROM_index_begin+j) != req.properties[i].EDT[j]) {
                   EEPROM.write(EEPROM_index_begin+j, req.properties[i].EDT[j]);                  
@@ -704,7 +767,7 @@ void loop() {
               break;
             }
             case PowerLimit:{
-              int EEPROM_index_begin=101;
+              int EEPROM_index_begin=162;
               for(int j=0;j<req.properties[i].PDC;j++){
                 if(EEPROM.read(EEPROM_index_begin+j) != req.properties[i].EDT[j]) {
                   EEPROM.write(EEPROM_index_begin+j, req.properties[i].EDT[j]);
@@ -741,7 +804,7 @@ void loop() {
           byte EPC=req.properties[i].EPC;
           switch(EPC){
             case OperationStatus:{
-              int EEPROM_index_begin=100;
+              int EEPROM_index_begin=161;
               for(int j=0;j<req.properties[i].PDC;j++){
                 if(EEPROM.read(EEPROM_index_begin+j) != req.properties[i].EDT[j]) {
                   EEPROM.write(EEPROM_index_begin+j, req.properties[i].EDT[j]);                  
@@ -754,7 +817,7 @@ void loop() {
               break;
             }
             case PowerLimit:{
-              int EEPROM_index_begin=101;
+              int EEPROM_index_begin=162;
               for(int j=0;j<req.properties[i].PDC;j++){
                 if(EEPROM.read(EEPROM_index_begin+j) != req.properties[i].EDT[j]) {
                   EEPROM.write(EEPROM_index_begin+j, req.properties[i].EDT[j]);
@@ -776,8 +839,7 @@ void loop() {
     } else if (ESV == INF_REQ) {
       byte EPC=req.properties[0].EPC;
       if(EPC == GET_echo) {
-        byte resMessage[] = {0x10, 0x81, req.TID[0], req.TID[1],0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,INF, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)}; //packet ECHONET Lite
-        sendMessage(reqIP, reqPort, resMessage);
+        sendEchoNode(ipMulti,portMulti);
         Serial.println("Sended info packet");
       } else {
         Serial.print("EPC code not found!  ");
@@ -794,17 +856,13 @@ void loop() {
     delay(1000);
     count++;
     if (count > 20) {
-      byte echoMyNode[] = {0x10, 0x81, 0x00, 0x00,0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01,0x73, 0x01,0xD5, 0x04, 0x01, EEPROM.read(97), EEPROM.read(98), EEPROM.read(99)};
-      Serial.println("ECHO ELECTRIC ENERGY SENSOR NODE");
-      UDPSender.beginPacketMulticast(ipMulti, portMulti, WiFi.localIP());
-      for (int i = 0; i < sizeof(echoMyNode); i++) {
-        UDPSender.write(echoMyNode[i]);
-      }
-      UDPSender.endPacket();
+      sendEchoNode(ipMulti,portMulti);
+    }
+      
       count = 0;
     }
-  }
 }
+
 
 int getMaxValue() {
   int sensorValue;    //value read from the sensor
@@ -821,11 +879,50 @@ int getMaxValue() {
   }
   return sensorMax - 3;
 }
-
-
-
+void sendMessage(IPAddress ip, int port, byte* message) {
+//  //fixbug
+//  Serial.println("Before send:");
+//      for(int i=0;i<sizeOfResponsePacket;i++){
+//        Serial.print(message[i]);
+//        Serial.print(" ");
+//      }
+//  Serial.println();
+//  //
+  UDPSender.beginPacket(ip, port);
+  for (int i = 0; i < sizeOfResponsePacket; i++) {
+    UDPSender.write(message[i]);
+    Serial.print(message[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+  UDPSender.endPacket();
+}
+void sendEchoNode(IPAddress ipMulti, int portMulti ){
+  Serial.println("Send Echo Node");
+  //Node Profile Class: 0xD5 Instance list notification
+  int lengthPacket=15;
+  int qualityEOJs=EEPROM.read(97);
+  int PDC=qualityEOJs*3+1;
+  lengthPacket+=(PDC-1);
+  byte echoMyNode[lengthPacket];
+  byte echoMyNode_head[]={0x10, 0x81, 0x00, 0x00, 0x0E, 0xF0, 0x01, 0x0E, 0xF0, 0x01, 0x73, 0x01, 0xD5, PDC, qualityEOJs};
+  for(int i=0;i<sizeof(echoMyNode_head);i++){
+    echoMyNode[i]=echoMyNode_head[i];
+  }
+  
+  for(int i=0;i<lengthPacket-15;i++){
+    echoMyNode[15+i]=EEPROM.read(98+i);
+  }
+  UDPSender.beginPacket(ipMulti, portMulti);
+  for (int i = 0; i < sizeof(echoMyNode); i++) {
+    UDPSender.write(echoMyNode[i]);
+    Serial.print(echoMyNode[i]);
+    Serial.print(" ");
+  }
+  UDPSender.endPacket();
+}
 void setStatusDevice() {
-  byte deviceStatus = EEPROM.read(100);
+  byte deviceStatus = EEPROM.read(161);
   if (deviceStatus == 0x30) {
     digitalWrite(LED_BUILTIN, HIGH);
     digitalWrite(Relay_Pin, HIGH);
